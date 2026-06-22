@@ -2,11 +2,12 @@ from rest_framework import viewsets, views, response, filters, status
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.decorators import action
 from rest_framework.response import Response
+from django_filters.rest_framework import DjangoFilterBackend
 from tenants.views import TenantAwareModelViewSet
 from accounts.permissions import IsStudent, IsTeacher, IsParent, IsParentOfStudent, IsStudentOrReadOnly
 from .models import StudentProfile, TeacherProfile, ParentProfile, ParentStudentMapping
 from .serializers import (
-    StudentProfileSerializer, TeacherProfileSerializer, 
+    StudentProfileSerializer, TeacherProfileSerializer,
     ParentProfileSerializer, ParentStudentMappingSerializer
 )
 from academics.models import StudentEnrollment
@@ -15,24 +16,37 @@ from django.db.models import Count, Avg, Q
 from django.utils import timezone
 from datetime import timedelta
 
-# --- TASK 2.3: Profile APIs ---
 
 class StudentProfileViewSet(TenantAwareModelViewSet):
-    queryset = StudentProfile.objects.all()
     serializer_class = StudentProfileSerializer
     
-    filter_backends = [filters.SearchFilter]
-    search_fields = ['user__first_name', 'user__last_name', 'user__email', 'enrollment_number']
+    # ✅ Both SearchFilter (name/email/ID) AND DjangoFilterBackend (status/class)
+    filter_backends = [filters.SearchFilter, DjangoFilterBackend]
+    search_fields = ['user__first_name', 'user__last_name', 'user__email', 'enrollment_number', 'phone_number']
+    filterset_fields = {
+        'is_archived': ['exact'],  # ?is_archived=true / false
+        'school': ['exact'],       # already scoped by tenant but kept for safety
+    }
     
     # ✅ RBAC: Only students can access
     permission_classes = [IsAuthenticated, IsStudentOrReadOnly]
 
     def get_queryset(self):
-        """Override to ensure students only see their own profile"""
-        user = self.request.user
-        qs = super().get_queryset()
+        # Start with tenant-scoped queryset with related data prefetched
+        qs = super().get_queryset().select_related('user').prefetch_related(
+            'parent_mappings__parent__user'
+        )
+        
+        # Handle class_level filter manually (via enrollment)
+        class_level = self.request.query_params.get('class_level', None)
+        if class_level:
+            qs = qs.filter(
+                enrollments__class_level_id=class_level,
+                enrollments__school=self.request.user.school
+            ).distinct()
         
         # If user is superuser or staff, return all
+        user = self.request.user
         if user.is_superuser or user.is_staff:
             return qs
         
@@ -105,11 +119,10 @@ class StudentProfileViewSet(TenantAwareModelViewSet):
 
 
 class TeacherProfileViewSet(TenantAwareModelViewSet):
-    queryset = TeacherProfile.objects.all()
+    queryset = TeacherProfile.objects.select_related('user').all()
     serializer_class = TeacherProfileSerializer
-    
     filter_backends = [filters.SearchFilter]
-    search_fields = ['user__first_name', 'user__last_name', 'user__email']
+    search_fields = ['user__first_name', 'user__last_name', 'user__email', 'employee_id']
     
     # ✅ RBAC: Only teachers can access
     permission_classes = [IsAuthenticated, IsTeacher]
@@ -153,9 +166,8 @@ class TeacherProfileViewSet(TenantAwareModelViewSet):
 
 
 class ParentProfileViewSet(TenantAwareModelViewSet):
-    queryset = ParentProfile.objects.all()
+    queryset = ParentProfile.objects.select_related('user').all()
     serializer_class = ParentProfileSerializer
-    
     filter_backends = [filters.SearchFilter]
     search_fields = ['user__first_name', 'user__last_name', 'user__email', 'phone_number']
     
@@ -246,12 +258,11 @@ class ParentProfileViewSet(TenantAwareModelViewSet):
 class ParentStudentMappingViewSet(TenantAwareModelViewSet):
     queryset = ParentStudentMapping.objects.all()
     serializer_class = ParentStudentMappingSerializer
-
     filter_backends = [filters.SearchFilter]
     search_fields = [
-        'parent__user__first_name', 
-        'parent__user__last_name', 
-        'student__user__first_name', 
+        'parent__user__first_name',
+        'parent__user__last_name',
+        'student__user__first_name',
         'student__user__last_name',
         'relationship'
     ]
