@@ -19,11 +19,11 @@ from django.utils import timezone
 from datetime import timedelta
 
 
-# ============================================
-# STUDENT PROFILE VIEWSET - ADMIN + STUDENT
-# ============================================
-
 class StudentProfileViewSet(TenantAwareModelViewSet):
+    # ✅ ADDED: Define the queryset
+    queryset = StudentProfile.objects.select_related('user').prefetch_related(
+        'parent_mappings__parent__user'
+    )
     serializer_class = StudentProfileSerializer
     
     filter_backends = [filters.SearchFilter, DjangoFilterBackend]
@@ -33,24 +33,15 @@ class StudentProfileViewSet(TenantAwareModelViewSet):
         'school': ['exact'],
     }
     
-    def get_permissions(self):
-        # ✅ Admin/Staff can access all
-        if self.request.user and (self.request.user.is_superuser or self.request.user.is_staff):
-            return [IsAuthenticated()]
-        
-        # ✅ Students can read/modify their own
-        if self.action in ['retrieve', 'me', 'my_parents', 'my_subjects']:
-            return [IsAuthenticated(), IsStudent()]
-        elif self.action in ['update', 'partial_update']:
-            return [IsAuthenticated(), IsStudent()]
-        else:
-            return [IsAuthenticated()]
+    permission_classes = [IsAuthenticated, IsStudentOrReadOnly]
 
     def get_queryset(self):
+        # Start with tenant-scoped queryset with related data prefetched
         qs = super().get_queryset().select_related('user').prefetch_related(
             'parent_mappings__parent__user'
         )
         
+        # Handle class_level filter manually (via enrollment)
         class_level = self.request.query_params.get('class_level', None)
         if class_level:
             qs = qs.filter(
@@ -58,10 +49,12 @@ class StudentProfileViewSet(TenantAwareModelViewSet):
                 enrollments__school=self.request.user.school
             ).distinct()
         
+        # If user is superuser or staff, return all
         user = self.request.user
         if user.is_superuser or user.is_staff:
             return qs
         
+        # If user is student, return only their profile
         try:
             student = StudentProfile.objects.get(user=user)
             return qs.filter(id=student.id)
@@ -71,7 +64,9 @@ class StudentProfileViewSet(TenantAwareModelViewSet):
     @action(detail=False, methods=['get', 'put', 'patch'], url_path='me')
     def me(self, request):
         """
-        GET/PUT/PATCH /api/v1/profiles/students/me/
+        GET /api/v1/profiles/students/me/ - Get current student's profile
+        PUT /api/v1/profiles/students/me/ - Update current student's profile
+        PATCH /api/v1/profiles/students/me/ - Partial update current student's profile
         """
         try:
             student = StudentProfile.objects.get(user=request.user, school=request.user.school)
@@ -85,6 +80,7 @@ class StudentProfileViewSet(TenantAwareModelViewSet):
             serializer = self.get_serializer(student)
             return Response(serializer.data)
         
+        # PUT or PATCH
         serializer = self.get_serializer(student, data=request.data, partial=(request.method == 'PATCH'))
         serializer.is_valid(raise_exception=True)
         self.perform_update(serializer)
@@ -92,6 +88,10 @@ class StudentProfileViewSet(TenantAwareModelViewSet):
 
     @action(detail=False, methods=['get'], url_path='me/parents')
     def my_parents(self, request):
+        """
+        GET /api/v1/profiles/students/me/parents/
+        Returns all parents/guardians linked to the current student.
+        """
         try:
             student = StudentProfile.objects.get(user=request.user, school=request.user.school)
         except StudentProfile.DoesNotExist:
@@ -123,6 +123,10 @@ class StudentProfileViewSet(TenantAwareModelViewSet):
 
     @action(detail=False, methods=['get'], url_path='me/subjects')
     def my_subjects(self, request):
+        """
+        GET /api/v1/profiles/students/me/subjects/
+        Returns all subjects for the current student's class level.
+        """
         try:
             student = StudentProfile.objects.get(user=request.user, school=request.user.school)
         except StudentProfile.DoesNotExist:
@@ -131,6 +135,7 @@ class StudentProfileViewSet(TenantAwareModelViewSet):
                 status=status.HTTP_404_NOT_FOUND
             )
         
+        # Get current enrollment
         enrollment = StudentEnrollment.objects.filter(
             student=student,
             school=request.user.school
@@ -143,6 +148,7 @@ class StudentProfileViewSet(TenantAwareModelViewSet):
                 "detail": "No enrollment found for this student."
             }, status=status.HTTP_200_OK)
         
+        # Get subjects for this class level
         subjects = Subject.objects.filter(
             class_levels=enrollment.class_level,
             school=request.user.school
@@ -167,28 +173,13 @@ class StudentProfileViewSet(TenantAwareModelViewSet):
         }, status=status.HTTP_200_OK)
 
 
-# ============================================
-# TEACHER PROFILE VIEWSET - ADMIN + TEACHER
-# ============================================
-
 class TeacherProfileViewSet(TenantAwareModelViewSet):
     queryset = TeacherProfile.objects.select_related('user').all()
     serializer_class = TeacherProfileSerializer
     filter_backends = [filters.SearchFilter]
     search_fields = ['user__first_name', 'user__last_name', 'user__email', 'employee_id']
     
-    def get_permissions(self):
-        # ✅ Admin/Staff can access all
-        if self.request.user and (self.request.user.is_superuser or self.request.user.is_staff):
-            return [IsAuthenticated()]
-        
-        # ✅ Teachers can access their own
-        if self.action in ['retrieve', 'me']:
-            return [IsAuthenticated(), IsTeacher()]
-        elif self.action in ['update', 'partial_update']:
-            return [IsAuthenticated(), IsTeacher()]
-        else:
-            return [IsAuthenticated()]
+    permission_classes = [IsAuthenticated, IsTeacher]
 
     def get_queryset(self):
         user = self.request.user
@@ -223,28 +214,13 @@ class TeacherProfileViewSet(TenantAwareModelViewSet):
         return Response(serializer.data)
 
 
-# ============================================
-# PARENT PROFILE VIEWSET - ADMIN + PARENT
-# ============================================
-
 class ParentProfileViewSet(TenantAwareModelViewSet):
     queryset = ParentProfile.objects.select_related('user').all()
     serializer_class = ParentProfileSerializer
     filter_backends = [filters.SearchFilter]
     search_fields = ['user__first_name', 'user__last_name', 'user__email', 'phone_number']
     
-    def get_permissions(self):
-        # ✅ Admin/Staff can access all
-        if self.request.user and (self.request.user.is_superuser or self.request.user.is_staff):
-            return [IsAuthenticated()]
-        
-        # ✅ Parents can access their own
-        if self.action in ['retrieve', 'me', 'my_children']:
-            return [IsAuthenticated(), IsParent()]
-        elif self.action in ['update', 'partial_update']:
-            return [IsAuthenticated(), IsParent()]
-        else:
-            return [IsAuthenticated()]
+    permission_classes = [IsAuthenticated, IsParent]
 
     def get_queryset(self):
         user = self.request.user
@@ -318,10 +294,6 @@ class ParentProfileViewSet(TenantAwareModelViewSet):
         return Response({"children": data})
 
 
-# ============================================
-# PARENT-STUDENT MAPPING VIEWSET - ADMIN + PARENT
-# ============================================
-
 class ParentStudentMappingViewSet(TenantAwareModelViewSet):
     queryset = ParentStudentMapping.objects.all()
     serializer_class = ParentStudentMappingSerializer
@@ -334,20 +306,7 @@ class ParentStudentMappingViewSet(TenantAwareModelViewSet):
         'relationship'
     ]
     
-    def get_permissions(self):
-        # ✅ Admin/Staff can access all
-        if self.request.user and (self.request.user.is_superuser or self.request.user.is_staff):
-            return [IsAuthenticated()]
-        
-        # ✅ Parents can access their own mappings
-        if self.action in ['retrieve', 'list']:
-            return [IsAuthenticated(), IsParent()]
-        elif self.action in ['create', 'update', 'partial_update', 'destroy']:
-            return [IsAuthenticated(), IsParent()]
-        elif self.action == 'request':
-            return [IsAuthenticated(), IsParent()]
-        else:
-            return [IsAuthenticated()]
+    permission_classes = [IsAuthenticated, IsParent]
 
     def get_queryset(self):
         user = self.request.user
@@ -401,10 +360,6 @@ class ParentStudentMappingViewSet(TenantAwareModelViewSet):
         serializer = self.get_serializer(mapping)
         return Response(serializer.data, status=status.HTTP_201_CREATED)
 
-
-# ============================================
-# CONTEXT SWITCHING API
-# ============================================
 
 class UserContextView(views.APIView):
     """
