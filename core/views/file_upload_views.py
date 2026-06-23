@@ -183,12 +183,16 @@ class GenerateViewURLView(APIView):
         return Response(view_data, status=status.HTTP_200_OK)
 
 
-class GenerateParentImageUploadURLView(APIView):
+class GenerateProfileImageUploadURLView(APIView):
     """
-    POST /api/v1/uploads/parent-image/
-    Generate upload URL for parent profile picture
+    POST /api/v1/uploads/profile-image/
+    Generate upload URL for profile picture (Parent, Student, or Teacher)
     
-    Request: { "file_name": "photo.jpg", "content_type": "image/jpeg" }
+    Request: { 
+        "file_name": "photo.jpg", 
+        "content_type": "image/jpeg",
+        "profile_type": "parent" | "student" | "teacher"
+    }
     Response: { "upload_url": "...", "file_path": "...", "file_id": "..." }
     """
     permission_classes = [IsAuthenticated]
@@ -196,6 +200,7 @@ class GenerateParentImageUploadURLView(APIView):
     def post(self, request):
         file_name = request.data.get('file_name')
         content_type = request.data.get('content_type', 'image/jpeg')
+        profile_type = request.data.get('profile_type', 'parent')
         
         if not file_name:
             return Response(
@@ -210,13 +215,36 @@ class GenerateParentImageUploadURLView(APIView):
                 status=status.HTTP_400_BAD_REQUEST
             )
         
+        # Validate profile type
+        valid_types = ['parent', 'student', 'teacher']
+        if profile_type not in valid_types:
+            return Response(
+                {"detail": f"profile_type must be one of: {', '.join(valid_types)}"},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
+        # Check if user has the correct profile
+        profile_map = {
+            'parent': ('parentprofile', ParentProfile),
+            'student': ('studentprofile', StudentProfile),
+            'teacher': ('teacherprofile', TeacherProfile),
+        }
+        
+        profile_attr, profile_model = profile_map[profile_type]
+        
+        if not hasattr(request.user, profile_attr):
+            return Response(
+                {"detail": f"You don't have a {profile_type} profile"},
+                status=status.HTTP_403_FORBIDDEN
+            )
+        
         try:
-            # Generate upload URL with simple path and dynamic content type
+            # Generate upload URL with dynamic path based on profile type
             upload_data = r2_storage.generate_image_upload_url(
                 user_id=request.user.id,
                 file_name=file_name,
                 content_type=content_type,
-                folder="profiles/parents"
+                folder=f"profiles/{profile_type}s"
             )
             
             return Response({
@@ -224,7 +252,8 @@ class GenerateParentImageUploadURLView(APIView):
                 "file_path": upload_data['file_path'],
                 "file_id": upload_data['file_id'],
                 "expires_at": upload_data['expires_at'],
-                "expires_in": upload_data['expires_in']
+                "expires_in": upload_data['expires_in'],
+                "profile_type": profile_type
             }, status=status.HTTP_200_OK)
             
         except Exception as e:
@@ -234,72 +263,65 @@ class GenerateParentImageUploadURLView(APIView):
             }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 
-class GetParentProfilePictureView(APIView):
+class GetProfilePictureView(APIView):
     """
-    GET /api/v1/profiles/parents/me/picture/
-    Returns a signed URL for the parent's profile picture
+    GET /api/v1/profiles/me/picture/?profile_type=parent|student|teacher
+    Returns a signed URL for the user's profile picture
     
     Response: {
         "url": "https://ai-cos.r2...signed...url",
         "expires_at": "2026-06-24T06:45:00Z",
         "expires_in": 86400,
-        "has_picture": true
+        "has_picture": true,
+        "profile_type": "parent"
     }
     """
     permission_classes = [IsAuthenticated]
     
     def get(self, request):
-        try:
-            # Get the parent profile for the logged-in user
-            parent = ParentProfile.objects.get(
-                user=request.user, 
-                school=request.user.school
-            )
-        except ParentProfile.DoesNotExist:
-            return Response({
-                "has_picture": False,
-                "detail": "Parent profile not found",
-                "url": None,
-                "expires_at": None,
-                "expires_in": None
-            }, status=status.HTTP_200_OK)
-        except Exception as e:
-            traceback.print_exc()
-            return Response({
-                "has_picture": False,
-                "detail": f"Error fetching profile: {str(e)}",
-                "url": None,
-                "expires_at": None,
-                "expires_in": None
-            }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+        profile_type = request.query_params.get('profile_type', 'parent')
         
-        # ✅ Get the picture path properly - convert to string
+        # Validate profile type
+        valid_types = ['parent', 'student', 'teacher']
+        if profile_type not in valid_types:
+            return Response({
+                "has_picture": False,
+                "detail": f"profile_type must be one of: {', '.join(valid_types)}",
+                "url": None,
+                "expires_at": None,
+                "expires_in": None
+            }, status=status.HTTP_400_BAD_REQUEST)
+        
+        # Get the profile
+        profile_map = {
+            'parent': ('parentprofile', ParentProfile),
+            'student': ('studentprofile', StudentProfile),
+            'teacher': ('teacherprofile', TeacherProfile),
+        }
+        
+        profile_attr, profile_model = profile_map[profile_type]
+        
+        if not hasattr(request.user, profile_attr):
+            return Response({
+                "has_picture": False,
+                "detail": f"You don't have a {profile_type} profile",
+                "url": None,
+                "expires_at": None,
+                "expires_in": None
+            }, status=status.HTTP_403_FORBIDDEN)
+        
+        profile = getattr(request.user, profile_attr)
+        
+        # Get the picture path properly
         picture_path = None
         
-        if hasattr(parent, 'profile_picture'):
-            if isinstance(parent.profile_picture, str):
-                picture_path = parent.profile_picture
-            elif hasattr(parent.profile_picture, 'name'):
-                # ✅ It's an ImageFieldFile, get the name
-                picture_path = parent.profile_picture.name
+        if hasattr(profile, 'profile_picture'):
+            if isinstance(profile.profile_picture, str):
+                picture_path = profile.profile_picture
+            elif hasattr(profile.profile_picture, 'name'):
+                picture_path = profile.profile_picture.name
             else:
-                # Try converting to string
-                picture_path = str(parent.profile_picture) if parent.profile_picture else None
-        
-        # ✅ If still None or empty, check the database directly
-        if not picture_path:
-            try:
-                from django.db import connection
-                cursor = connection.cursor()
-                cursor.execute(
-                    "SELECT profile_picture FROM profiles_parentprofile WHERE id = %s",
-                    [parent.id]
-                )
-                row = cursor.fetchone()
-                if row and row[0]:
-                    picture_path = row[0]
-            except Exception as e:
-                print(f"Error fetching from DB: {e}")
+                picture_path = str(profile.profile_picture) if profile.profile_picture else None
         
         if not picture_path:
             return Response({
@@ -307,11 +329,11 @@ class GetParentProfilePictureView(APIView):
                 "detail": "No profile picture set",
                 "url": None,
                 "expires_at": None,
-                "expires_in": None
+                "expires_in": None,
+                "profile_type": profile_type
             }, status=status.HTTP_200_OK)
         
         try:
-            # ✅ Ensure we have a string
             picture_path = str(picture_path)
             
             # Generate a signed view URL (valid for 24 hours)
@@ -325,7 +347,8 @@ class GetParentProfilePictureView(APIView):
                 "url": view_data['url'],
                 "expires_at": view_data['expires_at'],
                 "expires_in": view_data['expires_in'],
-                "file_path": picture_path
+                "file_path": picture_path,
+                "profile_type": profile_type
             }, status=status.HTTP_200_OK)
             
         except Exception as e:
@@ -335,5 +358,6 @@ class GetParentProfilePictureView(APIView):
                 "detail": f"Failed to generate view URL: {str(e)}",
                 "url": None,
                 "expires_at": None,
-                "expires_in": None
+                "expires_in": None,
+                "profile_type": profile_type
             }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)

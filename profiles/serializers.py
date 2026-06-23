@@ -14,6 +14,9 @@ class StudentProfileSerializer(serializers.ModelSerializer):
     phone_number = serializers.CharField(required=False)
     blood_group = serializers.CharField(required=False)
     
+    # ✅ Handle string paths for profile_picture
+    profile_picture = serializers.CharField(required=False, allow_blank=True, allow_null=True)
+    
     class Meta:
         model = StudentProfile
         fields = '__all__'
@@ -26,10 +29,21 @@ class StudentProfileSerializer(serializers.ModelSerializer):
             representation['first_name'] = instance.user.first_name
             representation['last_name'] = instance.user.last_name
             representation['email'] = instance.user.email
+        
+        # ✅ Convert ImageFieldFile to string for profile_picture
+        if instance.profile_picture:
+            if hasattr(instance.profile_picture, 'name'):
+                representation['profile_picture'] = instance.profile_picture.name
+            else:
+                representation['profile_picture'] = str(instance.profile_picture)
+        else:
+            representation['profile_picture'] = None
+            
         return representation
 
     def update(self, instance, validated_data):
-        """Handle User fields when updating"""
+        """Handle User fields and profile_picture when updating"""
+        # Handle User fields
         first_name = validated_data.pop('first_name', None)
         last_name = validated_data.pop('last_name', None)
         email = validated_data.pop('email', None)
@@ -43,6 +57,12 @@ class StudentProfileSerializer(serializers.ModelSerializer):
             if email is not None:
                 user.email = email
             user.save()
+        
+        # ✅ Handle profile_picture as a string path
+        if 'profile_picture' in validated_data:
+            profile_picture_value = validated_data.pop('profile_picture')
+            if profile_picture_value is not None:
+                instance.profile_picture = profile_picture_value
             
         return super().update(instance, validated_data)
 
@@ -52,6 +72,9 @@ class TeacherProfileSerializer(serializers.ModelSerializer):
     first_name = serializers.CharField(required=False)
     last_name = serializers.CharField(required=False)
     email = serializers.EmailField(required=False)
+    
+    # ✅ Handle string paths for profile_picture
+    profile_picture = serializers.CharField(required=False, allow_blank=True, allow_null=True)
 
     class Meta:
         model = TeacherProfile
@@ -65,11 +88,22 @@ class TeacherProfileSerializer(serializers.ModelSerializer):
             representation['first_name'] = instance.user.first_name
             representation['last_name'] = instance.user.last_name
             representation['email'] = instance.user.email
-            representation['is_archived'] = not instance.user.is_active 
+            representation['is_archived'] = not instance.user.is_active
+        
+        # ✅ Convert ImageFieldFile to string for profile_picture
+        if instance.profile_picture:
+            if hasattr(instance.profile_picture, 'name'):
+                representation['profile_picture'] = instance.profile_picture.name
+            else:
+                representation['profile_picture'] = str(instance.profile_picture)
+        else:
+            representation['profile_picture'] = None
+            
         return representation
 
     def update(self, instance, validated_data):
-        """Handle User fields when updating"""
+        """Handle User fields and profile_picture when updating"""
+        # Handle User fields
         first_name = validated_data.pop('first_name', None)
         last_name = validated_data.pop('last_name', None)
         email = validated_data.pop('email', None)
@@ -83,6 +117,12 @@ class TeacherProfileSerializer(serializers.ModelSerializer):
             if email is not None:
                 user.email = email
             user.save()
+        
+        # ✅ Handle profile_picture as a string path
+        if 'profile_picture' in validated_data:
+            profile_picture_value = validated_data.pop('profile_picture')
+            if profile_picture_value is not None:
+                instance.profile_picture = profile_picture_value
             
         return super().update(instance, validated_data)
 
@@ -105,7 +145,7 @@ class ParentProfileSerializer(serializers.ModelSerializer):
         if instance.user:
             representation['is_archived'] = not instance.user.is_active
         
-        # ✅ Convert ImageFieldFile to string
+        # ✅ Convert ImageFieldFile to string for profile_picture
         if instance.profile_picture:
             if hasattr(instance.profile_picture, 'name'):
                 representation['profile_picture'] = instance.profile_picture.name
