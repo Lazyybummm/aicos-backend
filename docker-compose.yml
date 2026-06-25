@@ -8,10 +8,11 @@ services:
     environment:
       # Django Settings
       - DJANGO_SECRET_KEY=iz!@@e=byp!e@tbcva_c)9jhnn$+t*&mg0qat#rci%(9@4qaki
-      - DEBUG=True
+      - DEBUG=False
       - ALLOWED_HOSTS=localhost,127.0.0.1,147.93.108.82,187.127.139.208,api.aicos.gridsphere.in,aicos.gridsphere.in,attendance.gridsphere.in
       - CORS_ALLOWED_ORIGINS=http://localhost:5173,http://localhost:3000,https://api.aicos.gridsphere.in,https://aicos.gridsphere.in
-      - DJANGO_SETTINGS_MODULE=core.settings.prod  # ← ADDED
+      - DJANGO_SETTINGS_MODULE=core.settings.prod
+      - SECURE_PROXY_SSL_HEADER=HTTP_X_FORWARDED_PROTO,https
       - CSRF_TRUSTED_ORIGINS=https://aicos.gridsphere.in,https://api.aicos.gridsphere.in
       
       # Database
@@ -44,4 +45,4 @@ services:
       - ./staticfiles:/app/staticfiles
       - ./media:/app/media
       - ./logs:/app/logs
-    command: python manage.py runserver 0.0.0.0:8000
+    command: gunicorn --bind 0.0.0.0:8000 --workers 4 --timeout 120 --max-requests 1000 --max-requests-jitter 100 core.wsgi:application
