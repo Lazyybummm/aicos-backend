@@ -9,8 +9,8 @@ services:
       # Django Settings
       - DJANGO_SECRET_KEY=iz!@@e=byp!e@tbcva_c)9jhnn$+t*&mg0qat#rci%(9@4qaki
       - DEBUG=True
-      - ALLOWED_HOSTS=localhost,127.0.0.1,147.93.108.82,187.127.139.208,attendance.gridsphere.in
-      - CORS_ALLOWED_ORIGINS=http://localhost:5173,http://localhost:3000
+      - ALLOWED_HOSTS=localhost,127.0.0.1,147.93.108.82,187.127.139.208,api.aicos.gridsphere.in,attendance.gridsphere.in
+      - CORS_ALLOWED_ORIGINS=http://localhost:5173,http://localhost:3000,https://api.aicos.gridsphere.in
       - DJANGO_SETTINGS_MODULE=core.settings.prod
       
       # Database
