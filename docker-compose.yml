@@ -19,7 +19,7 @@ services:
       - DATABASE_URL=postgresql://neondb_owner:npg_V2Bnuz5xFpYe@ep-nameless-bird-a1pl9bnj-pooler.ap-southeast-1.aws.neon.tech/neondb?sslmode=require&channel_binding=require
       
       # DeepSeek API
-      - DEEPSEEK_API_KEY=sk-8410023103ce4edd9e12993623ba1dc6
+      - DEEPSEEK_API_KEY=sk-sk-7b2551f31f914186bf3e12180d236342
       
       # R2 Storage
       - R2_ACCOUNT_ID=bdce6341de1e7b4818a4832fbe29d68c
