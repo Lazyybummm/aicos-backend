@@ -8,8 +8,8 @@ class ActivityLog(TenantAwareModel):
     """Tracks administrative actions across the school."""
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, blank=True)
-    action_type = models.CharField(max_length=50)
-    description = models.TextField()
+    action_type = models.CharField(max_length=50)  # e.g., "Student Registration"
+    description = models.TextField()  # e.g., "Sarah Jenkins was added to Grade 10-B"
     timestamp = models.DateTimeField(auto_now_add=True)
 
     class Meta:
@@ -60,76 +60,65 @@ class SchoolSettings(TenantAwareModel):
         return f"Settings for {self.school.name}"
 
 
-class Grievance(TenantAwareModel):
-    """
-    Student/Parent grievance tracking system.
-    """
-    class PriorityChoices(models.TextChoices):
-        LOW = 'Low', 'Low'
-        MEDIUM = 'Medium', 'Medium'
-        HIGH = 'High', 'High'
-        URGENT = 'Urgent', 'Urgent'
+# ============================================================
+# NEW: Circular model
+# ============================================================
 
-    class StatusChoices(models.TextChoices):
-        PENDING = 'Pending', 'Pending'
-        IN_PROGRESS = 'In-Progress', 'In-Progress'
-        RESOLVED = 'Resolved', 'Resolved'
-        CLOSED = 'Closed', 'Closed'
-        REJECTED = 'Rejected', 'Rejected'
+class Circular(TenantAwareModel):
+    """
+    A school-wide circular posted by the admin.
+    Students, teachers, and parents can read it based on target_audience.
+    """
 
-    class SourceChoices(models.TextChoices):
-        STUDENT = 'Student', 'Student'
-        PARENT = 'Parent', 'Parent'
+    class AudienceChoice(models.TextChoices):
+        ALL      = 'all',      'All'
+        STUDENTS = 'students', 'Students'
+        TEACHERS = 'teachers', 'Teachers'
+        PARENTS  = 'parents',  'Parents'
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
-    
-    # Who submitted the grievance
-    submitted_by = models.ForeignKey(
-        settings.AUTH_USER_MODEL, 
-        on_delete=models.CASCADE, 
-        related_name='submitted_grievances'
+
+    title   = models.CharField(max_length=255)
+    content = models.TextField()
+
+    target_audience = models.CharField(
+        max_length=20,
+        choices=AudienceChoice.choices,
+        default=AudienceChoice.ALL,
+        db_index=True,
     )
-    source_type = models.CharField(max_length=20, choices=SourceChoices.choices)
-    
-    # Optional: Link to specific student (if parent submits for a child)
-    student = models.ForeignKey(
-        'profiles.StudentProfile', 
-        on_delete=models.SET_NULL, 
-        null=True, 
+
+    # Optional: restrict to specific class levels (empty = all classes)
+    target_class_levels = models.ManyToManyField(
+        'academics.ClassLevel',
         blank=True,
-        related_name='grievances'
+        related_name='circulars',
+        help_text="Leave empty to target every class in the school.",
     )
-    
-    # Grievance details
-    title = models.CharField(max_length=255)
-    description = models.TextField()
-    category = models.CharField(max_length=100, blank=True, null=True)
-    priority = models.CharField(max_length=20, choices=PriorityChoices.choices, default=PriorityChoices.MEDIUM)
-    
-    # Status tracking
-    status = models.CharField(max_length=20, choices=StatusChoices.choices, default=StatusChoices.PENDING)
-    
-    # Admin/Staff resolution details
-    assigned_to = models.ForeignKey(
-        settings.AUTH_USER_MODEL, 
-        on_delete=models.SET_NULL, 
-        null=True, 
-        blank=True,
-        related_name='assigned_grievances'
+
+    # Optional file attachment stored in R2 (same pattern as profile pictures)
+    attachment_key  = models.CharField(max_length=500, blank=True, null=True,
+                                       help_text="R2 object key for the attached file.")
+    attachment_name = models.CharField(max_length=255, blank=True, null=True,
+                                       help_text="Original filename shown to recipients.")
+
+    is_published = models.BooleanField(
+        default=True,
+        help_text="Unpublish to hide from recipients without deleting.",
     )
-    admin_remarks = models.TextField(blank=True, null=True)
-    resolved_at = models.DateTimeField(null=True, blank=True)
-    
-    # Timestamps
+
+    created_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        related_name='circulars_created',
+    )
+
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
     class Meta:
         ordering = ['-created_at']
-        indexes = [
-            models.Index(fields=['status', 'created_at']),
-            models.Index(fields=['submitted_by', 'status']),
-        ]
 
     def __str__(self):
-        return f"{self.title[:50]} - {self.status} ({self.submitted_by.email})"
+        return f"[{self.get_target_audience_display()}] {self.title} ({self.school.name})"

@@ -1,6 +1,7 @@
 # school_admin/urls.py
 from django.urls import path, include
 from rest_framework.routers import DefaultRouter
+
 from .views.dashboard_views import (
     DashboardStatsAPIView,
     EnrollmentTrendAPIView,
@@ -16,10 +17,13 @@ from .views.school_admin_views import (
     SchoolAdminParentStudentMappingListView,
     SchoolAdminParentListView,
 )
-from .views.grievance_views import GrievanceViewSet
+
+# ── NEW: Circular ViewSet ─────────────────────────────────────────────────────
+from .views.circular_views import CircularViewSet
 
 router = DefaultRouter()
-router.register(r'grievances', GrievanceViewSet, basename='grievance')
+router.register(r'circulars', CircularViewSet, basename='circular')
+# ─────────────────────────────────────────────────────────────────────────────
 
 urlpatterns = [
     # ── Dashboard ──────────────────────────────────────────────────────────
@@ -33,7 +37,6 @@ urlpatterns = [
     # ── Onboarding ─────────────────────────────────────────────────────────
     path('staff/students/register/', OnboardStudentAPIView.as_view(), name='admin-register-student'),
     path('staff/teachers/register/', OnboardTeacherAPIView.as_view(), name='admin-register-teacher'),
-    path('staff/parents/register/', OnboardParentAPIView.as_view(), name='admin-register-parent'),
 
     # ── Settings ───────────────────────────────────────────────────────────
     path('settings/', SchoolSettingsAPIView.as_view(), name='school-settings'),
@@ -44,7 +47,8 @@ urlpatterns = [
     path('parents/', SchoolAdminParentListView.as_view(), name='admin-parent-list'),
     path('teacher-assignments/', SchoolAdminTeacherAssignmentListView.as_view(), name='admin-teacher-assignment-list'),
     path('parent-student-mappings/', SchoolAdminParentStudentMappingListView.as_view(), name='admin-parent-student-mapping-list'),
-    
-    # ── Grievances ──────────────────────────────────────────────────────────
+    path('staff/parents/register/', OnboardParentAPIView.as_view(), name='admin-register-parent'),
+
+    # ── Circulars (ViewSet via router) ────────────────────────────────────
     path('', include(router.urls)),
 ]
