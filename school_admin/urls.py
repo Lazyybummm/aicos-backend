@@ -17,6 +17,12 @@ from .views.school_admin_views import (
     SchoolAdminParentListView,
 )
 from .views.grievance_views import GrievanceViewSet
+from .views.timetable_settings_views import (
+    TimetableSettingsAPIView,
+    TimetableSettingsCheckAPIView,
+    TimetableSettingsOnboardAPIView,
+    TimetableSettingsHistoryAPIView,
+)
 
 router = DefaultRouter()
 router.register(r'grievances', GrievanceViewSet, basename='grievance')
@@ -37,6 +43,12 @@ urlpatterns = [
 
     # ── Settings ───────────────────────────────────────────────────────────
     path('settings/', SchoolSettingsAPIView.as_view(), name='school-settings'),
+    
+    # ── Timetable Settings ────────────────────────────────────────────────
+    path('timetable-settings/check/', TimetableSettingsCheckAPIView.as_view(), name='timetable-settings-check'),
+    path('timetable-settings/onboard/', TimetableSettingsOnboardAPIView.as_view(), name='timetable-settings-onboard'),
+    path('timetable-settings/', TimetableSettingsAPIView.as_view(), name='timetable-settings'),
+    path('timetable-settings/history/', TimetableSettingsHistoryAPIView.as_view(), name='timetable-settings-history'),
 
     # ── People & Assignments ───────────────────────────────────────────────
     path('students/', SchoolAdminStudentListView.as_view(), name='admin-student-list'),
