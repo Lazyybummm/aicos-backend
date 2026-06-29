@@ -58,14 +58,17 @@ class SchoolSettings(TenantAwareModel):
 
     def __str__(self):
         return f"Settings for {self.school.name}"
-# school_admin/models.py (Updated TimetableSettings section)
+
+
+# ============================================================
+# TIMETABLE SETTINGS
+# ============================================================
 
 class TimetableSettings(TenantAwareModel):
     """
     Timetable configuration settings for the school.
     ALL fields are required - no defaults. Admin must explicitly set everything.
     """
-    # Working days of the week
     class DayChoices(models.TextChoices):
         MONDAY = 'Monday', 'Monday'
         TUESDAY = 'Tuesday', 'Tuesday'
@@ -77,31 +80,19 @@ class TimetableSettings(TenantAwareModel):
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     
-    # Working days (REQUIRED - no default)
     working_days = models.JSONField(
         help_text="List of working days (e.g., ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday'])"
     )
-    
-    # Period configuration (REQUIRED - no default)
     periods_per_day = models.IntegerField(help_text="Number of periods in a day")
     period_duration = models.IntegerField(help_text="Duration of each period in minutes")
-    
-    # School hours (REQUIRED - no default)
     school_start_time = models.TimeField(help_text="School start time")
     school_end_time = models.TimeField(help_text="School end time")
-    
-    # Lunch settings (REQUIRED - no default)
     lunch_duration = models.IntegerField(help_text="Lunch break duration in minutes")
     lunch_start_after_period = models.IntegerField(help_text="Period number after which lunch occurs")
-    
-    # Subject allocation rules (REQUIRED - no default)
     max_same_subject_per_day = models.IntegerField(help_text="Maximum periods of same subject per day")
     max_same_subject_per_week = models.IntegerField(help_text="Maximum periods of same subject per week")
-    
-    # Timetable generation settings (REQUIRED - no default)
     auto_generate = models.BooleanField(default=False, help_text="Enable auto-generation of timetable")
     
-    # Timestamp
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
     updated_by = models.ForeignKey(
@@ -125,24 +116,16 @@ class TimetableSettings(TenantAwareModel):
         return f"Timetable Settings for {self.school.name}"
 
     def get_working_days_list(self):
-        """Return working days as a list of strings."""
         if isinstance(self.working_days, list):
             return self.working_days
         return []
 
     def get_total_periods_per_week(self):
-        """Calculate total periods per week based on working days and periods per day."""
         return len(self.get_working_days_list()) * self.periods_per_day
 
     def get_period_times(self):
-        """
-        Calculate start and end times for each period.
-        Returns a list of dictionaries with period number, start time, end time.
-        Only lunch break is included.
-        """
         from datetime import datetime, timedelta
         
-        # Get start and end times
         start_time = self.school_start_time
         end_time = self.school_end_time
         
@@ -151,26 +134,22 @@ class TimetableSettings(TenantAwareModel):
         end_datetime = datetime.combine(datetime.today(), end_time)
         
         for period_num in range(1, self.periods_per_day + 1):
-            # Check if we've exceeded the end time
             if current_time >= end_datetime:
                 break
                 
             start_time_obj = current_time.time()
             end_time_calc = current_time + timedelta(minutes=self.period_duration)
             
-            # Check if this is a LUNCH break only
             is_break = False
             break_name = None
             duration = self.period_duration
             
-            # Lunch after the specified period
             if period_num == self.lunch_start_after_period + 1:
                 is_break = True
                 break_name = 'Lunch Break'
                 duration = self.lunch_duration
                 end_time_calc = current_time + timedelta(minutes=duration)
             
-            # Check if this period would exceed school end time
             if end_time_calc > end_datetime:
                 end_time_calc = end_datetime
             
@@ -186,6 +165,7 @@ class TimetableSettings(TenantAwareModel):
             current_time = end_time_calc
         
         return periods
+
 
 class TimetableConfigHistory(TenantAwareModel):
     """
@@ -215,6 +195,10 @@ class TimetableConfigHistory(TenantAwareModel):
     def __str__(self):
         return f"Change on {self.changed_at.strftime('%Y-%m-%d %H:%M')} by {self.changed_by}"
 
+
+# ============================================================
+# GRIEVANCE MODEL (from feature/parent-grievance branch)
+# ============================================================
 
 class Grievance(TenantAwareModel):
     """
@@ -283,3 +267,75 @@ class Grievance(TenantAwareModel):
 
     def __str__(self):
         return f"{self.title[:50]} - {self.status} ({self.submitted_by.email})"
+
+
+# ============================================================
+# CIRCULAR MODEL (from main branch)
+# ============================================================
+
+class Circular(TenantAwareModel):
+    """
+    A school-wide circular posted by the admin.
+    Students, teachers, and parents can read it based on target_audience.
+    """
+
+    class AudienceChoice(models.TextChoices):
+        ALL      = 'all',      'All'
+        STUDENTS = 'students', 'Students'
+        TEACHERS = 'teachers', 'Teachers'
+        PARENTS  = 'parents',  'Parents'
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+
+    title = models.CharField(max_length=255)
+    content = models.TextField()
+
+    target_audience = models.CharField(
+        max_length=20,
+        choices=AudienceChoice.choices,
+        default=AudienceChoice.ALL,
+        db_index=True,
+    )
+
+    # Optional: restrict to specific class levels (empty = all classes)
+    target_class_levels = models.ManyToManyField(
+        'academics.ClassLevel',
+        blank=True,
+        related_name='circulars',
+        help_text="Leave empty to target every class in the school.",
+    )
+
+    # Optional file attachment stored in R2 (same pattern as profile pictures)
+    attachment_key = models.CharField(
+        max_length=500,
+        blank=True,
+        null=True,
+        help_text="R2 object key for the attached file."
+    )
+    attachment_name = models.CharField(
+        max_length=255,
+        blank=True,
+        null=True,
+        help_text="Original filename shown to recipients."
+    )
+
+    is_published = models.BooleanField(
+        default=True,
+        help_text="Unpublish to hide from recipients without deleting.",
+    )
+
+    created_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        related_name='circulars_created',
+    )
+
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ['-created_at']
+
+    def __str__(self):
+        return f"[{self.get_target_audience_display()}] {self.title} ({self.school.name})"

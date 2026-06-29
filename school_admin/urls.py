@@ -1,6 +1,7 @@
 # school_admin/urls.py
 from django.urls import path, include
 from rest_framework.routers import DefaultRouter
+
 from .views.dashboard_views import (
     DashboardStatsAPIView,
     EnrollmentTrendAPIView,
@@ -16,7 +17,11 @@ from .views.school_admin_views import (
     SchoolAdminParentStudentMappingListView,
     SchoolAdminParentListView,
 )
+
+# ── Grievance Views ──────────────────────────────────────────────────────────
 from .views.grievance_views import GrievanceViewSet
+
+# ── Timetable Settings Views ─────────────────────────────────────────────────
 from .views.timetable_settings_views import (
     TimetableSettingsAPIView,
     TimetableSettingsCheckAPIView,
@@ -24,7 +29,14 @@ from .views.timetable_settings_views import (
     TimetableSettingsHistoryAPIView,
 )
 
+# ── Circular Views ───────────────────────────────────────────────────────────
+from .views.circular_views import CircularViewSet
+
+# ── Router ────────────────────────────────────────────────────────────────────
 router = DefaultRouter()
+
+# Register both ViewSets
+router.register(r'circulars', CircularViewSet, basename='circular')
 router.register(r'grievances', GrievanceViewSet, basename='grievance')
 
 urlpatterns = [
@@ -56,7 +68,7 @@ urlpatterns = [
     path('parents/', SchoolAdminParentListView.as_view(), name='admin-parent-list'),
     path('teacher-assignments/', SchoolAdminTeacherAssignmentListView.as_view(), name='admin-teacher-assignment-list'),
     path('parent-student-mappings/', SchoolAdminParentStudentMappingListView.as_view(), name='admin-parent-student-mapping-list'),
-    
-    # ── Grievances ──────────────────────────────────────────────────────────
+
+    # ── Circulars, Grievances & Other Router URLs ────────────────────────
     path('', include(router.urls)),
 ]
